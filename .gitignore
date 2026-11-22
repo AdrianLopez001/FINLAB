@@ -1,0 +1,19 @@
+# Maven build output (recreated on every build)
+target/
+
+# IDEs and editors
+.idea/
+*.iml
+.vscode/
+.antigravity/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local only
+*.log
+.env
+
+# Content drafts (LinkedIn posts, video scripts) — not part of the code
+drafts/
