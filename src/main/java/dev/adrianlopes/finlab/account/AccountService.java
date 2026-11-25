@@ -1,52 +1,75 @@
 package dev.adrianlopes.finlab.account;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
- * Business rules: validates every operation and changes the balance.
- * Methods are synchronized so only one operation runs at a time.
+ * Business rules: validates every operation, changes the balance and records it
+ * in the statement. Each operation runs in one database transaction: it all
+ * happens, or none of it does.
  */
 @Service
 public class AccountService {
 
-    private final AccountRepository repository;
+    static final long ACCOUNT_ID = 1L;
 
-    public AccountService(AccountRepository repository) {
-        this.repository = repository;
+    private final AccountRepository accounts;
+    private final TransactionRepository transactions;
+
+    public AccountService(AccountRepository accounts, TransactionRepository transactions) {
+        this.accounts = accounts;
+        this.transactions = transactions;
     }
 
-    public synchronized BigDecimal getBalance() {
-        return repository.getBalance();
+    @Transactional(readOnly = true)
+    public BigDecimal getBalance() {
+        return accounts.findById(ACCOUNT_ID).orElseThrow().getBalance();
     }
 
-    public synchronized BigDecimal deposit(String requestId, String amountText) {
-        BigDecimal amount = checkOperation(requestId, amountText);
-        repository.saveBalance(repository.getBalance().add(amount));
-        repository.markProcessed(requestId);
+    @Transactional(readOnly = true)
+    public List<Transaction> recentTransactions() {
+        return transactions.findTop10ByOrderByIdDesc();
+    }
+
+    @Transactional(readOnly = true)
+    public List<Transaction> allTransactions() {
+        return transactions.findAllByOrderByIdDesc();
+    }
+
+    @Transactional
+    public BigDecimal deposit(String requestId, String amountText) {
+        Account account = lockAccountFor(requestId);
+        BigDecimal amount = Money.parse(amountText);
+        account.deposit(amount);
+        transactions.save(new Transaction(requestId, TransactionType.DEPOSIT, amount, account.getBalance()));
         return amount;
     }
 
-    public synchronized BigDecimal withdraw(String requestId, String amountText) {
-        BigDecimal amount = checkOperation(requestId, amountText);
-        BigDecimal balance = repository.getBalance();
-        if (amount.compareTo(balance) > 0) {
-            throw new OperationException("Insufficient balance.");
-        }
-        repository.saveBalance(balance.subtract(amount));
-        repository.markProcessed(requestId);
+    @Transactional
+    public BigDecimal withdraw(String requestId, String amountText) {
+        Account account = lockAccountFor(requestId);
+        BigDecimal amount = Money.parse(amountText);
+        account.withdraw(amount);
+        transactions.save(new Transaction(requestId, TransactionType.WITHDRAWAL, amount, account.getBalance()));
         return amount;
     }
 
-    /** Checks that the request is new and the amount is valid; returns the amount. */
-    private BigDecimal checkOperation(String requestId, String amountText) {
+    /**
+     * Checks the request id, locks the account row and makes sure this form
+     * wasn't applied before. While the lock is held, no other operation can
+     * read or change the balance.
+     */
+    private Account lockAccountFor(String requestId) {
         if (requestId == null || requestId.isBlank() || requestId.length() > 64) {
             throw new OperationException("Invalid request. Please try again.");
         }
-        if (repository.isProcessed(requestId)) {
+        Account account = accounts.findByIdForUpdate(ACCOUNT_ID).orElseThrow();
+        if (transactions.existsByRequestId(requestId)) {
             throw new DuplicateOperationException();
         }
-        return Money.parse(amountText);
+        return account;
     }
 }

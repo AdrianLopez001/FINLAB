@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+
+<!-- Transactions table, reused by home.html and statement.html -->
+<div th:fragment="transactions(list)">
+    <p th:if="${#lists.isEmpty(list)}">No transactions yet.</p>
+    <table th:unless="${#lists.isEmpty(list)}" border="1" cellpadding="6">
+        <tr>
+            <th>Date and time</th>
+            <th>Type</th>
+            <th>Amount</th>
+            <th>Balance after</th>
+        </tr>
+        <tr th:each="t : ${list}">
+            <td th:text="${t.dateTime}">01/01/2026 10:00:00</td>
+            <td th:text="${t.type}">Deposit</td>
+            <td th:text="${t.amount}">+ R$ 10,00</td>
+            <td th:text="${t.balanceAfter}">R$ 10,00</td>
+        </tr>
+    </table>
+</div>
+
+</body>
+</html>

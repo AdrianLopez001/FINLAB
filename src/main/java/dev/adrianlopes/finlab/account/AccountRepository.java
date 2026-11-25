@@ -1,35 +1,23 @@
 package dev.adrianlopes.finlab.account;
 
-import org.springframework.stereotype.Repository;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
-import java.math.BigDecimal;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.Optional;
 
 /**
- * Where the data lives. For now it's in memory; the rest of the app
- * only talks to these methods, so the storage can change later.
- * Not thread-safe on its own: AccountService serializes the calls.
+ * Database access for the account. Spring Data writes the implementation.
  */
-@Repository
-public class AccountRepository {
+public interface AccountRepository extends JpaRepository<Account, Long> {
 
-    private BigDecimal balance = BigDecimal.ZERO;
-    private final Set<String> processedRequests = new HashSet<>();
-
-    public BigDecimal getBalance() {
-        return balance;
-    }
-
-    public void saveBalance(BigDecimal newBalance) {
-        this.balance = newBalance;
-    }
-
-    public boolean isProcessed(String requestId) {
-        return processedRequests.contains(requestId);
-    }
-
-    public void markProcessed(String requestId) {
-        processedRequests.add(requestId);
-    }
+    /**
+     * Reads the account and locks its row until the transaction ends
+     * (SELECT ... FOR UPDATE). Any other request that wants the same row waits.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select a from Account a where a.id = :id")
+    Optional<Account> findByIdForUpdate(@Param("id") Long id);
 }

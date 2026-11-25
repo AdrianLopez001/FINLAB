@@ -4,7 +4,8 @@
 
 ![Java](https://img.shields.io/badge/Java-21-orange)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3-brightgreen)
-![Version](https://img.shields.io/badge/version-v0.5-blue)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791)
+![Version](https://img.shields.io/badge/version-v0.6-blue)
 
 ---
 
@@ -22,13 +23,16 @@ Every version follows the same cycle:
 
 Each change brings new questions, and those become the next improvements. The git history is part of the project: every version is tagged, so you can check out any of them and see exactly where the code was at that point.
 
-## What it does (v0.5)
+## What it does (v0.6)
 
 A bank account in the browser:
 
 - Shows the current **balance**
 - **Deposit** an amount
 - **Withdraw** an amount
+- Keeps a **statement**: every operation with date and time, type, amount and the balance after it
+
+Everything is stored in **PostgreSQL**, so the balance and the history survive restarts.
 
 Every amount is validated before touching the balance:
 
@@ -51,65 +55,83 @@ Money is stored as `BigDecimal`, so values like `0.10` are exact, and it's alway
 
 ## How to run
 
-Requirements: **Java 21** and **Maven**.
+Requirements: **Java 21**, **Maven** and **Docker**.
 
 ```bash
-mvn spring-boot:run     # starts the app
-mvn test                # runs the automated tests
+docker compose up -d    # starts PostgreSQL (port 5432)
+mvn spring-boot:run     # starts the app; Flyway creates the tables on the first run
+mvn test                # runs the automated tests (starts its own PostgreSQL in Docker)
 ```
 
-Then open **http://localhost:8081**.
+Then open **http://localhost:8081**. The full statement is at **http://localhost:8081/statement**.
 
-> The port is set to `8081` in `src/main/resources/application.properties`. Remove that line to use Spring's default, `8080`.
+> Port `8081` is set in `src/main/resources/application.properties`. The database connection can be changed with the `DB_URL`, `DB_USER` and `DB_PASSWORD` environment variables, and the Docker port with `DB_PORT`.
 
 ## Project structure
 
 ```
 finlab/
-├── pom.xml                                   # dependencies: web, thymeleaf, test
+├── pom.xml                                   # dependencies: web, thymeleaf, data-jpa, flyway, postgresql, test
+├── docker-compose.yml                        # PostgreSQL 16 for local development
 └── src/
     ├── main/
     │   ├── java/dev/adrianlopes/finlab/
     │   │   ├── FinlabApplication.java        # starts the app (nothing else)
     │   │   └── account/
     │   │       ├── AccountController.java    # HTTP: routes, messages, which page to show
-    │   │       ├── AccountService.java       # business rules: validation, deposit, withdraw
-    │   │       ├── AccountRepository.java    # where the data lives (in memory for now)
+    │   │       ├── AccountService.java       # business rules, one database transaction per operation
+    │   │       ├── Account.java              # entity: the account row (balance)
+    │   │       ├── Transaction.java          # entity: one row of the statement
+    │   │       ├── TransactionType.java      # DEPOSIT or WITHDRAWAL
+    │   │       ├── AccountRepository.java    # database access for the account (with row lock)
+    │   │       ├── TransactionRepository.java # database access for the statement
+    │   │       ├── TransactionView.java      # a transaction formatted for the page
     │   │       ├── Money.java                # text -> money -> text (parse, validate, format)
     │   │       ├── OperationException.java   # a refused operation, with the reason
     │   │       └── DuplicateOperationException.java  # the same form arrived twice
     │   └── resources/
-    │       ├── application.properties        # server port
+    │       ├── application.properties        # port and database settings
+    │       ├── db/migration/
+    │       │   └── V1__create_account_and_transactions.sql  # tables, created by Flyway
     │       └── templates/
-    │           ├── home.html                 # account page (Thymeleaf)
+    │           ├── home.html                 # account page + recent transactions
+    │           ├── statement.html            # full statement
+    │           ├── fragments.html            # transactions table, shared by both pages
     │           └── error.html                # FinLab error page (404, 405, ...)
     └── test/java/dev/adrianlopes/finlab/
-        ├── AccountFlowTest.java              # uses the app like a browser (HTTP + cookies)
+        ├── AccountFlowTest.java              # uses the app like a browser, against a real PostgreSQL
         └── account/MoneyTest.java            # unit tests for parsing and formatting
 ```
 
 Each layer only talks to the one below it:
 
 ```
-browser ──HTTP──> AccountController ──> AccountService ──> AccountRepository
-                        │                     │
+browser ──HTTP──> AccountController ──> AccountService ──> AccountRepository ──┐
+                        │                     │            TransactionRepository ┴──> PostgreSQL
                    templates/*.html        Money (rules for amounts)
 ```
 
 | Piece | What it does |
 |---|---|
 | `AccountController` | Receives the request, calls the service, puts the result message in a *flash attribute* and redirects |
-| `AccountService` | Checks the request and the amount, applies the operation; `synchronized`, so one operation at a time |
-| `AccountRepository` | Keeps the balance and the ids of forms already applied |
+| `AccountService` | Each operation runs in one `@Transactional` database transaction: lock the account row, check the form wasn't applied before, validate, update the balance, save the statement row |
+| `Account` / `Transaction` | JPA entities: Java classes mapped to the `account` and `transactions` tables |
+| `AccountRepository` / `TransactionRepository` | Spring Data interfaces; queries come from method names (`existsByRequestId`) or `@Query` |
+| `findByIdForUpdate` | `SELECT ... FOR UPDATE`: the account row stays locked until the operation ends, so operations never overlap |
+| `V1__create_account_and_transactions.sql` | Flyway migration: the schema is versioned SQL; Hibernate only validates it (`ddl-auto=validate`) |
 | `Money` | Turns typed text into a valid `BigDecimal` and formats it as `R$ 1.234,56` |
-| `OperationException` | Thrown when an operation is refused; its message is what the user sees |
-| `home.html` / `error.html` | The pages, as real HTML files rendered by Thymeleaf instead of strings in Java |
+| `home.html` / `statement.html` / `error.html` | The pages, rendered by Thymeleaf |
 
 The redirect after each `POST` follows the *Post/Redirect/Get* pattern: refreshing the page doesn't submit the operation again.
 
 ## Versions
 
 Each version starts from a problem found in the previous one. Newest first.
+
+### [v0.6](https://github.com/AdrianLopez001/FINLAB/tree/v0.6) — PostgreSQL and transaction history
+
+- **Problem:** the balance lived in memory, so restarting the app erased the money, and there was no record of what happened or when. `synchronized` also only protected one running copy of the app.
+- **Solution:** PostgreSQL runs in Docker (`docker-compose.yml`), Flyway creates the tables, and Spring Data JPA reads and writes them. Every applied operation becomes a row in `transactions` (type, amount, balance after, date and time), shown on the home page and in `/statement`. Each operation is one database transaction that locks the account row (`SELECT ... FOR UPDATE`), which replaces `synchronized` and works across app instances. `request_id` is `UNIQUE`, so a form can't be stored twice. Tests run against a real PostgreSQL started by Testcontainers.
 
 ### [v0.5](https://github.com/AdrianLopez001/FINLAB/tree/v0.5) — Layers, templates and tests
 

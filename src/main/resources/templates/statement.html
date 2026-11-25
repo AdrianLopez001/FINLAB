@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>FinLab · Statement</title>
+</head>
+<body>
+<h1>FinLab</h1>
+<h2>Balance: <span th:text="${balance}">R$ 0,00</span></h2>
+
+<h3>Statement</h3>
+<div th:replace="~{fragments :: transactions(${transactions})}"></div>
+<p><a href="/">Back to your account</a></p>
+</body>
+</html>

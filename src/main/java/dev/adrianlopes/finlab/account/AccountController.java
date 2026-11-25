@@ -27,7 +27,15 @@ public class AccountController {
     public String home(Model model) {
         model.addAttribute("balance", Money.format(service.getBalance()));
         model.addAttribute("requestId", UUID.randomUUID().toString());
+        model.addAttribute("transactions", service.recentTransactions().stream().map(TransactionView::from).toList());
         return "home";
+    }
+
+    @GetMapping("/statement")
+    public String statement(Model model) {
+        model.addAttribute("balance", Money.format(service.getBalance()));
+        model.addAttribute("transactions", service.allTransactions().stream().map(TransactionView::from).toList());
+        return "statement";
     }
 
     @GetMapping({"/deposit", "/withdraw"})

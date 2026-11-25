@@ -16,6 +16,10 @@
     <button formaction="/withdraw">Withdraw</button>
 </form>
 
+<h3>Recent transactions</h3>
+<div th:replace="~{fragments :: transactions(${transactions})}"></div>
+<p><a href="/statement">See full statement</a></p>
+
 <script>
     // After the first click, block the buttons so the form isn't sent twice.
     function disableButtons(form) {

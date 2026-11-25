@@ -5,6 +5,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.net.CookieManager;
@@ -26,9 +30,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Black-box tests: they use the app like a browser does (HTTP + cookies),
  * so they keep working no matter how the code is organized inside.
+ * A real PostgreSQL runs in a throwaway Docker container (Testcontainers).
  */
+@Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class AccountFlowTest {
+
+    @Container
+    @ServiceConnection
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
+
+    /** Non-breaking space: Java puts it between "R$" and the number in pt-BR. */
+    private static final String NBSP = "\u00a0";
 
     @LocalServerPort
     private int port;
@@ -115,7 +128,7 @@ class AccountFlowTest {
 
         String page = home();
         assertThat(balance(page)).isEqualByComparingTo(before.add(new BigDecimal("10.00")));
-        assertThat(message(page)).isEqualTo("Deposited R$ 10,00");
+        assertThat(message(page)).isEqualTo("Deposited R$" + NBSP + "10,00");
         assertThat(message(home())).as("no leftover message on the next page").isEmpty();
     }
 
@@ -162,7 +175,52 @@ class AccountFlowTest {
         assertThat(response.body()).contains("FinLab").doesNotContain("Whitelabel");
     }
 
+    @Test
+    void everyOperationIsRecordedWithDateTimeAndBalance() throws Exception {
+        String page = submit("/deposit", newRequestId(), "12.34");
+
+        assertThat(page).contains("Recent transactions");
+        String firstRow = find(page, "<tr>\\s*<td>(.*?)</tr>");
+        assertThat(stripTags(firstRow))
+                .matches("(?s).*\\d{2}/\\d{2}/\\d{4} \\d{2}:\\d{2}:\\d{2}.*")
+                .contains("Deposit")
+                .contains("+ R$" + NBSP + "12,34");
+    }
+
+    @Test
+    void onlyAppliedOperationsAreRecorded() throws Exception {
+        int before = statementRows();
+        String requestId = newRequestId();
+
+        submit("/deposit", requestId, "1.00");
+        submit("/deposit", requestId, "1.00");          // same form again
+        submit("/deposit", newRequestId(), "abc");      // invalid amount
+        submit("/withdraw", newRequestId(), "99999999"); // above the limit
+
+        assertThat(statementRows()).isEqualTo(before + 1);
+    }
+
+    @Test
+    void simultaneousWithdrawalsNeverOverdraw() throws Exception {
+        BigDecimal current = balance(home());
+        if (current.signum() > 0) {
+            submit("/withdraw", newRequestId(), current.toPlainString());
+        }
+        submit("/deposit", newRequestId(), "100.00");
+        int before = statementRows();
+
+        runAtTheSameTime(10, () -> post("/withdraw", newRequestId(), "80.00"));
+
+        assertThat(balance(home())).isEqualByComparingTo("20.00");
+        assertThat(statementRows()).isEqualTo(before + 1);
+    }
+
     // ---------- helpers ----------
+
+    private int statementRows() throws Exception {
+        String page = send(browserRequest(url("/statement")).GET().build()).body();
+        return Math.max(0, page.split("<tr>").length - 2); // minus the text before the table and the header row
+    }
 
     private String home() throws Exception {
         return send(browserRequest(url("/")).GET().build()).body();
@@ -209,7 +267,7 @@ class AccountFlowTest {
     private static BigDecimal balance(String html) {
         String text = stripTags(find(html, "<h2[^>]*>(.*?)</h2>"));
         String digits = text.replace("Balance:", "").replace("R$", "")
-                .replace(" ", "").replace(" ", "")
+                .replace(NBSP, "").replace(" ", "")
                 .replace(".", "").replace(",", ".");
         return new BigDecimal(digits);
     }
