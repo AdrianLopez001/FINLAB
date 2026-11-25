@@ -4,7 +4,7 @@
 
 ![Java](https://img.shields.io/badge/Java-21-orange)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3-brightgreen)
-![Version](https://img.shields.io/badge/version-v0.2-blue)
+![Version](https://img.shields.io/badge/version-v0.3-blue)
 
 ---
 
@@ -22,7 +22,7 @@ Every version follows the same cycle:
 
 Each change brings new questions, and those become the next improvements. The git history is part of the project: every version is tagged, so you can check out any of them and see exactly where the code was at that point.
 
-## What it does (v0.2)
+## What it does (v0.3)
 
 A bank account in the browser:
 
@@ -79,6 +79,7 @@ finlab/
 | `@Controller` | Handles the HTTP requests |
 | `implements ErrorController` | Replaces Spring's default error page with a FinLab page |
 | `balance` | The account balance (`BigDecimal`), kept in memory |
+| `synchronized` | Only one request reads or changes the balance at a time |
 | `GET /` | Returns the HTML page with the balance, a message and the form |
 | `POST /deposit` | Applies the deposit rule, then redirects to `/` |
 | `POST /withdraw` | Applies the withdrawal rule, then redirects to `/` |
@@ -91,6 +92,11 @@ The redirect after each `POST` follows the *Post/Redirect/Get* pattern: refreshi
 ## Versions
 
 Each version starts from a problem found in the previous one. Newest first.
+
+### [v0.3](https://github.com/AdrianLopez001/FINLAB/tree/v0.3) — Concurrent operations
+
+- **Problem:** 200 simultaneous deposits of R$ 1,00 raised the balance by only R$ 181,00. Two requests could read the same balance at the same time and one overwrote the other's update (*lost update*).
+- **Solution:** the methods that read or change the balance (`home`, `deposit`, `withdraw`) are `synchronized`, so requests touch it one at a time. Verified with 600 simultaneous deposits (none lost) and 10 simultaneous withdrawals of R$ 80,00 from R$ 100,00 (only one approved).
 
 ### [v0.2](https://github.com/AdrianLopez001/FINLAB/tree/v0.2) — Exact money and validation
 

@@ -25,6 +25,8 @@ public class FinlabApplication implements ErrorController {
     private static final BigDecimal MAX_AMOUNT = new BigDecimal("1000000.00");
     private static final Locale BRAZIL = Locale.forLanguageTag("pt-BR");
 
+    // Shared by every request. Methods that read or change it are synchronized,
+    // so only one request touches the balance at a time.
     private BigDecimal balance = BigDecimal.ZERO;
     private String message = "";
 
@@ -34,7 +36,7 @@ public class FinlabApplication implements ErrorController {
 
     @GetMapping("/")
     @ResponseBody
-    public String home() {
+    public synchronized String home() {
         return "<html><body>"
                 + "<h1>FinLab</h1>"
                 + "<h2>Balance: " + formatMoney(balance) + "</h2>"
@@ -53,7 +55,7 @@ public class FinlabApplication implements ErrorController {
     }
 
     @PostMapping("/deposit")
-    public String deposit(@RequestParam(required = false) String amount) {
+    public synchronized String deposit(@RequestParam(required = false) String amount) {
         BigDecimal value = toMoney(amount);
         String error = validate(value);
         if (error != null) {
@@ -66,7 +68,7 @@ public class FinlabApplication implements ErrorController {
     }
 
     @PostMapping("/withdraw")
-    public String withdraw(@RequestParam(required = false) String amount) {
+    public synchronized String withdraw(@RequestParam(required = false) String amount) {
         BigDecimal value = toMoney(amount);
         String error = validate(value);
         if (error != null) {
