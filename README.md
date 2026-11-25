@@ -4,7 +4,7 @@
 
 ![Java](https://img.shields.io/badge/Java-21-orange)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3-brightgreen)
-![Version](https://img.shields.io/badge/version-v0.4-blue)
+![Version](https://img.shields.io/badge/version-v0.5-blue)
 
 ---
 
@@ -22,7 +22,7 @@ Every version follows the same cycle:
 
 Each change brings new questions, and those become the next improvements. The git history is part of the project: every version is tagged, so you can check out any of them and see exactly where the code was at that point.
 
-## What it does (v0.4)
+## What it does (v0.5)
 
 A bank account in the browser:
 
@@ -54,7 +54,8 @@ Money is stored as `BigDecimal`, so values like `0.10` are exact, and it's alway
 Requirements: **Java 21** and **Maven**.
 
 ```bash
-mvn spring-boot:run
+mvn spring-boot:run     # starts the app
+mvn test                # runs the automated tests
 ```
 
 Then open **http://localhost:8081**.
@@ -65,34 +66,55 @@ Then open **http://localhost:8081**.
 
 ```
 finlab/
-├── pom.xml                                   # dependencies: spring-boot-starter-web
-└── src/main/
-    ├── java/dev/adrianlopes/finlab/
-    │   └── FinlabApplication.java            # startup, page, rules and error page
-    └── resources/
-        └── application.properties            # server port
+├── pom.xml                                   # dependencies: web, thymeleaf, test
+└── src/
+    ├── main/
+    │   ├── java/dev/adrianlopes/finlab/
+    │   │   ├── FinlabApplication.java        # starts the app (nothing else)
+    │   │   └── account/
+    │   │       ├── AccountController.java    # HTTP: routes, messages, which page to show
+    │   │       ├── AccountService.java       # business rules: validation, deposit, withdraw
+    │   │       ├── AccountRepository.java    # where the data lives (in memory for now)
+    │   │       ├── Money.java                # text -> money -> text (parse, validate, format)
+    │   │       ├── OperationException.java   # a refused operation, with the reason
+    │   │       └── DuplicateOperationException.java  # the same form arrived twice
+    │   └── resources/
+    │       ├── application.properties        # server port
+    │       └── templates/
+    │           ├── home.html                 # account page (Thymeleaf)
+    │           └── error.html                # FinLab error page (404, 405, ...)
+    └── test/java/dev/adrianlopes/finlab/
+        ├── AccountFlowTest.java              # uses the app like a browser (HTTP + cookies)
+        └── account/MoneyTest.java            # unit tests for parsing and formatting
+```
+
+Each layer only talks to the one below it:
+
+```
+browser ──HTTP──> AccountController ──> AccountService ──> AccountRepository
+                        │                     │
+                   templates/*.html        Money (rules for amounts)
 ```
 
 | Piece | What it does |
 |---|---|
-| `@SpringBootApplication` + `main` | Starts Spring Boot and the embedded Tomcat server |
-| `@Controller` | Handles the HTTP requests |
-| `implements ErrorController` | Replaces Spring's default error page with a FinLab page |
-| `balance` | The account balance (`BigDecimal`), kept in memory |
-| `synchronized` | Only one request reads or changes the balance at a time |
-| `requestId` + `processedRequests` | Each form carries a unique id; a form sent twice is applied only once |
-| `GET /` | Returns the HTML page with the balance, a message and the form |
-| `POST /deposit` | Applies the deposit rule, then redirects to `/` |
-| `POST /withdraw` | Applies the withdrawal rule, then redirects to `/` |
-| `GET /deposit`, `GET /withdraw` | Redirect to `/` (opening those URLs directly no longer shows an error) |
-| `/error` | Error page with a link back to the account (404, 405, ...) |
-| `toMoney` / `validate` / `formatMoney` | Parse, check and display amounts |
+| `AccountController` | Receives the request, calls the service, puts the result message in a *flash attribute* and redirects |
+| `AccountService` | Checks the request and the amount, applies the operation; `synchronized`, so one operation at a time |
+| `AccountRepository` | Keeps the balance and the ids of forms already applied |
+| `Money` | Turns typed text into a valid `BigDecimal` and formats it as `R$ 1.234,56` |
+| `OperationException` | Thrown when an operation is refused; its message is what the user sees |
+| `home.html` / `error.html` | The pages, as real HTML files rendered by Thymeleaf instead of strings in Java |
 
 The redirect after each `POST` follows the *Post/Redirect/Get* pattern: refreshing the page doesn't submit the operation again.
 
 ## Versions
 
 Each version starts from a problem found in the previous one. Newest first.
+
+### [v0.5](https://github.com/AdrianLopez001/FINLAB/tree/v0.5) — Layers, templates and tests
+
+- **Problem:** one class did everything: started the app, built the HTML as strings, validated, stored the balance and handled errors. Every change touched the same file, and nothing proved the rules still worked after a change. The message on screen was also global, so one user could see another user's message.
+- **Solution:** the code is split into layers inside `account/` (controller → service → repository), money rules moved to `Money`, and the pages became Thymeleaf templates. Before moving anything, 20 black-box tests were written against v0.4 (they use the app like a browser); the same tests pass after the refactor. Messages are now per user (*flash attributes*), and a repeated form is ignored silently, so only the first result is shown.
 
 ### [v0.4](https://github.com/AdrianLopez001/FINLAB/tree/v0.4) — One click, one operation
 

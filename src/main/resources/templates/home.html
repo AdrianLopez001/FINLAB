@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>FinLab</title>
+</head>
+<body>
+<h1>FinLab</h1>
+<h2>Balance: <span th:text="${balance}">R$ 0,00</span></h2>
+<p th:text="${message}"></p>
+
+<form method="post" onsubmit="disableButtons(this)">
+    <input type="hidden" name="requestId" th:value="${requestId}">
+    <input type="number" name="amount" step="0.01" min="0.01" required>
+    <button formaction="/deposit">Deposit</button>
+    <button formaction="/withdraw">Withdraw</button>
+</form>
+
+<script>
+    // After the first click, block the buttons so the form isn't sent twice.
+    function disableButtons(form) {
+        setTimeout(() => form.querySelectorAll('button').forEach(b => b.disabled = true), 0);
+    }
+</script>
+</body>
+</html>

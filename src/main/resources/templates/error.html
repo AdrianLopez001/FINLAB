@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>FinLab</title>
+</head>
+<body>
+<h1>FinLab</h1>
+<h2 th:text="${status == 404} ? 'Page not found.' : 'Something went wrong.'">Something went wrong.</h2>
+<p><a href="/">Back to your account</a></p>
+</body>
+</html>
