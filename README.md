@@ -4,7 +4,7 @@
 
 ![Java](https://img.shields.io/badge/Java-21-orange)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3-brightgreen)
-![Version](https://img.shields.io/badge/version-v0.1-blue)
+![Version](https://img.shields.io/badge/version-v0.2-blue)
 
 ---
 
@@ -22,7 +22,7 @@ Every version follows the same cycle:
 
 Each change brings new questions, and those become the next improvements. The git history is part of the project: every version is tagged, so you can check out any of them and see exactly where the code was at that point.
 
-## What it does (v0.1)
+## What it does (v0.2)
 
 A bank account in the browser:
 
@@ -30,15 +30,24 @@ A bank account in the browser:
 - **Deposit** an amount
 - **Withdraw** an amount
 
-Rules:
+Every amount is validated before touching the balance:
+
+| Condition | Result |
+|---|---|
+| Missing or not a number (`abc`, `NaN`, `Infinity`) | rejected: *"Enter a valid amount, like 10.50."* |
+| Zero or negative | rejected: *"Amount must be greater than zero."* |
+| More than 2 decimal places (`10.005`) | rejected: *"Amount must have at most 2 decimal places."* |
+| Above R$ 1.000.000,00 per operation | rejected: *"Amount must be at most R$ 1.000.000,00."* |
+
+Then:
 
 | Action | Condition | Result |
 |---|---|---|
-| Deposit | amount ≤ 0 | rejected: *"Amount must be greater than zero."* |
-| Deposit | amount > 0 | added to the balance |
-| Withdraw | amount ≤ 0 | rejected: *"Amount must be greater than zero."* |
+| Deposit | valid amount | added to the balance |
 | Withdraw | amount > balance | rejected: *"Insufficient balance."* |
 | Withdraw | otherwise | subtracted from the balance |
+
+Money is stored as `BigDecimal`, so values like `0.10` are exact, and it's always shown in Brazilian format (`R$ 1.234,56`).
 
 ## How to run
 
@@ -59,7 +68,7 @@ finlab/
 ├── pom.xml                                   # dependencies: spring-boot-starter-web
 └── src/main/
     ├── java/dev/adrianlopes/finlab/
-    │   └── FinlabApplication.java            # startup, page and rules
+    │   └── FinlabApplication.java            # startup, page, rules and error page
     └── resources/
         └── application.properties            # server port
 ```
@@ -68,18 +77,29 @@ finlab/
 |---|---|
 | `@SpringBootApplication` + `main` | Starts Spring Boot and the embedded Tomcat server |
 | `@Controller` | Handles the HTTP requests |
-| `balance` | The account balance, kept in memory |
+| `implements ErrorController` | Replaces Spring's default error page with a FinLab page |
+| `balance` | The account balance (`BigDecimal`), kept in memory |
 | `GET /` | Returns the HTML page with the balance, a message and the form |
 | `POST /deposit` | Applies the deposit rule, then redirects to `/` |
 | `POST /withdraw` | Applies the withdrawal rule, then redirects to `/` |
+| `GET /deposit`, `GET /withdraw` | Redirect to `/` (opening those URLs directly no longer shows an error) |
+| `/error` | Error page with a link back to the account (404, 405, ...) |
+| `toMoney` / `validate` / `formatMoney` | Parse, check and display amounts |
 
 The redirect after each `POST` follows the *Post/Redirect/Get* pattern: refreshing the page doesn't submit the operation again.
 
 ## Versions
 
-| Version | What changed |
-|---|---|
-| [v0.1](https://github.com/AdrianLopez001/FINLAB/tree/v0.1) | First working version: balance, deposit and withdrawal in the browser |
+Each version starts from a problem found in the previous one. Newest first.
+
+### [v0.2](https://github.com/AdrianLopez001/FINLAB/tree/v0.2) — Exact money and validation
+
+- **Problem:** money was a `double`, so R$ 0,30 − 0,10 − 0,10 became 0,0999… and a R$ 0,10 balance refused a R$ 0,10 withdrawal. `NaN` and `Infinity` passed the `amount <= 0` check and broke the balance for good. Opening `/deposit` in the browser showed Spring's default error page.
+- **Solution:** money is a `BigDecimal`. Every amount is parsed and validated on the server (a number, greater than zero, at most 2 decimals, at most R$ 1.000.000,00). `GET /deposit` and `GET /withdraw` redirect home, and errors show a FinLab page.
+
+### [v0.1](https://github.com/AdrianLopez001/FINLAB/tree/v0.1) — First working version
+
+- Balance, deposit and withdrawal in the browser, in a single class.
 
 ## Follow along
 
