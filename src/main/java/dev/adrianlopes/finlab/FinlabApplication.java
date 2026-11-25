@@ -16,7 +16,10 @@ import org.springframework.web.bind.annotation.ResponseBody;
 
 import java.math.BigDecimal;
 import java.text.NumberFormat;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
 
 @SpringBootApplication
 @Controller
@@ -30,6 +33,10 @@ public class FinlabApplication implements ErrorController {
     private BigDecimal balance = BigDecimal.ZERO;
     private String message = "";
 
+    // Request ids of operations already applied. A form sent twice carries the same id,
+    // so the second copy is recognized and ignored (idempotency).
+    private final Set<String> processedRequests = new HashSet<>();
+
     public static void main(String[] args) {
         SpringApplication.run(FinlabApplication.class, args);
     }
@@ -41,11 +48,17 @@ public class FinlabApplication implements ErrorController {
                 + "<h1>FinLab</h1>"
                 + "<h2>Balance: " + formatMoney(balance) + "</h2>"
                 + "<p>" + message + "</p>"
-                + "<form method='post'>"
+                + "<form method='post' onsubmit='disableButtons(this)'>"
+                + "<input type='hidden' name='requestId' value='" + UUID.randomUUID() + "'>"
                 + "<input type='number' name='amount' step='0.01' min='0.01' required> "
                 + "<button formaction='/deposit'>Deposit</button> "
                 + "<button formaction='/withdraw'>Withdraw</button>"
                 + "</form>"
+                + "<script>"
+                + "function disableButtons(form) {"
+                + "  setTimeout(() => form.querySelectorAll('button').forEach(b => b.disabled = true), 0);"
+                + "}"
+                + "</script>"
                 + "</body></html>";
     }
 
@@ -55,28 +68,40 @@ public class FinlabApplication implements ErrorController {
     }
 
     @PostMapping("/deposit")
-    public synchronized String deposit(@RequestParam(required = false) String amount) {
+    public synchronized String deposit(@RequestParam(required = false) String requestId,
+                                       @RequestParam(required = false) String amount) {
         BigDecimal value = toMoney(amount);
         String error = validate(value);
-        if (error != null) {
+        if (!isValidRequestId(requestId)) {
+            message = "Invalid request. Please try again.";
+        } else if (processedRequests.contains(requestId)) {
+            message = "This operation was already processed.";
+        } else if (error != null) {
             message = error;
         } else {
             balance = balance.add(value);
+            processedRequests.add(requestId);
             message = "Deposited " + formatMoney(value);
         }
         return "redirect:/";
     }
 
     @PostMapping("/withdraw")
-    public synchronized String withdraw(@RequestParam(required = false) String amount) {
+    public synchronized String withdraw(@RequestParam(required = false) String requestId,
+                                        @RequestParam(required = false) String amount) {
         BigDecimal value = toMoney(amount);
         String error = validate(value);
-        if (error != null) {
+        if (!isValidRequestId(requestId)) {
+            message = "Invalid request. Please try again.";
+        } else if (processedRequests.contains(requestId)) {
+            message = "This operation was already processed.";
+        } else if (error != null) {
             message = error;
         } else if (value.compareTo(balance) > 0) {
             message = "Insufficient balance.";
         } else {
             balance = balance.subtract(value);
+            processedRequests.add(requestId);
             message = "Withdrew " + formatMoney(value);
         }
         return "redirect:/";
@@ -93,6 +118,10 @@ public class FinlabApplication implements ErrorController {
                 + "<p><a href='/'>Back to your account</a></p>"
                 + "</body></html>";
         return ResponseEntity.status(status).contentType(MediaType.TEXT_HTML).body(page);
+    }
+
+    private static boolean isValidRequestId(String requestId) {
+        return requestId != null && !requestId.isBlank() && requestId.length() <= 64;
     }
 
     private static BigDecimal toMoney(String text) {

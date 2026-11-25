@@ -4,7 +4,7 @@
 
 ![Java](https://img.shields.io/badge/Java-21-orange)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3-brightgreen)
-![Version](https://img.shields.io/badge/version-v0.3-blue)
+![Version](https://img.shields.io/badge/version-v0.4-blue)
 
 ---
 
@@ -22,7 +22,7 @@ Every version follows the same cycle:
 
 Each change brings new questions, and those become the next improvements. The git history is part of the project: every version is tagged, so you can check out any of them and see exactly where the code was at that point.
 
-## What it does (v0.3)
+## What it does (v0.4)
 
 A bank account in the browser:
 
@@ -80,6 +80,7 @@ finlab/
 | `implements ErrorController` | Replaces Spring's default error page with a FinLab page |
 | `balance` | The account balance (`BigDecimal`), kept in memory |
 | `synchronized` | Only one request reads or changes the balance at a time |
+| `requestId` + `processedRequests` | Each form carries a unique id; a form sent twice is applied only once |
 | `GET /` | Returns the HTML page with the balance, a message and the form |
 | `POST /deposit` | Applies the deposit rule, then redirects to `/` |
 | `POST /withdraw` | Applies the withdrawal rule, then redirects to `/` |
@@ -92,6 +93,11 @@ The redirect after each `POST` follows the *Post/Redirect/Get* pattern: refreshi
 ## Versions
 
 Each version starts from a problem found in the previous one. Newest first.
+
+### [v0.4](https://github.com/AdrianLopez001/FINLAB/tree/v0.4) — One click, one operation
+
+- **Problem:** clicking *Deposit* (or *Withdraw*) twice very fast sent the same form twice, and the server applied it twice: R$ 10,00 became R$ 20,00. `synchronized` only put the two requests in line; it didn't know they were the same operation.
+- **Solution:** every form carries a unique `requestId` (a UUID). The server remembers the ids it has applied, and a second copy of the same form is ignored with *"This operation was already processed."* (idempotency). In the browser, the buttons are also disabled right after the first click.
 
 ### [v0.3](https://github.com/AdrianLopez001/FINLAB/tree/v0.3) — Concurrent operations
 
